@@ -1,6 +1,6 @@
-# 😎 LimeAcademy Web3 advanced example
+# Book Library Dapp
 
-Election contract iteractions example.
+[Lime Academy] Book library contract iteractions example.
 
 ## 📌 Prerequisites
 
@@ -141,11 +141,11 @@ const { connect, isLoading } = useConnect({
 
 **Contract initialisation & interaction**
 For contract interaction we are using a library called [ethers.js](https://docs.ethers.org/v5/).
-This logic is in `src/pages/Election.jsx`.
+This logic is in `src/pages/BookLibrary.jsx`.
 In order to create a contract object we initialise the `Contract` class from the `ethers` library:
 
 ```javascript
-const electionContract = new ethers.Contract(contractAddress, electionABI, signer);
+const bookLibraryContract = new ethers.Contract(contractAddress, electionABI, signer);
 ```
 
 The first argument is the contract address, in our case is deployed at Sepolia test network.
@@ -159,13 +159,13 @@ const { data: signer } = useSigner();
 After we have a contract initialised we can call its functions:
 
 ```javascript
-const currentLeader = await contract.currentLeader();
+const availableBooks = await contract.getAvailableBooks();
 ```
 
-In this case we are calling the function `currentLeader` to get some data from the contract. This function is a `read` one and does nor require gas and signing.
+In this case we are calling the function `getAvailableBooks` to get some data from the contract. This function is a `read` one and does nor require gas and signing.
 
 ```javascript
-const tx = await contract.submitStateResult([name, votesBiden, votesTrump, stateSeats]);
+const tx = await contract.addBook(title, copies);
 ```
 
-In this case we are calling a `write` function called `submitStateResult` which alters the state of the contract and requires a `signer` and some gas in order to be executed.
+In this case we are calling a `write` function called `addBook` which alters the state of the contract and requires a `signer` and some gas in order to be executed.
