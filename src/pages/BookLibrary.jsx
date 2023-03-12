@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { useSigner } from 'wagmi';
 import bookLibABI from '../abi/BookLibrary.json';
+import libTokenABI from '../abi/LIB.json';
 import Button from '../components/ui/Button';
 
 const BookLibrary = () => {
@@ -9,10 +10,13 @@ const BookLibrary = () => {
   // sepolia:
   // const contractAddress = '0xA8E46754033a8Fa049Fe602418B3B9D4B630fc94';
   // localhost:
-  const contractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+  const libTokenAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+  const bookLibAddress = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
+  const wrapValue = ethers.utils.parseEther('0.1'); // Value to approve for the spender to use
 
   // Contract states
   const [contract, setContract] = useState();
+  const [libTokenContract, setLibTokenContract] = useState();
   const [contractData, setContractData] = useState({});
   const [isLoadingContractData, setIsLoadingContractData] = useState(true);
 
@@ -57,7 +61,15 @@ const BookLibrary = () => {
     setIsHolderChanging(true);
     const title = getTitle(titleWithSuffix);
     try {
-      const borrowTx = await contract.borrowBook(title);
+      const preparedSignature = await onAttemptToApprove(title);
+      const borrowTx = await contract.borrowBook(
+        title,
+        wrapValue,
+        preparedSignature.deadline,
+        preparedSignature.v,
+        preparedSignature.r,
+        preparedSignature.s,
+      );
       await borrowTx;
     } catch (e) {
       console.error(`Cannot borrow book ${title}`, e.reason);
@@ -126,8 +138,11 @@ const BookLibrary = () => {
   // Use effects
   useEffect(() => {
     if (signer) {
-      const bookLibraryContract = new ethers.Contract(contractAddress, bookLibABI, signer);
+      const bookLibraryContract = new ethers.Contract(bookLibAddress, bookLibABI, signer);
       setContract(bookLibraryContract);
+
+      const libToken = new ethers.Contract(libTokenAddress, libTokenABI, signer);
+      setLibTokenContract(libToken);
     }
   }, [signer]);
 
@@ -135,8 +150,86 @@ const BookLibrary = () => {
     contract && getContractData();
   }, [contract, getContractData]);
 
+  const testSigningMessage = async () => {
+    // const { library } = useWeb3React<Web3Provider>();
+    // const signer = await library.getSigner();
+    const messageToSign = 'Yes, I signed the message';
+    const messageHash = ethers.utils.solidityKeccak256(['string'], [messageToSign]);
+    const arrayfiedHash = ethers.utils.arrayify(messageHash);
+    const signedMessage = await signer.signMessage(arrayfiedHash);
+    alert(`message hash: ${messageHash}\nsigned message: \n${signedMessage}`);
+  };
+
+  const onAttemptToApprove = async () => {
+    const permitContractAddress = libTokenContract;
+    const account = await signer.getAddress();
+    const SPENDER_ADDRESS = contract.address;
+
+    // Account here is the wallete address
+    const nonce = await permitContractAddress.nonces(account); // Our Token Contract Nonces
+    const deadline = +new Date() + 60 * 60; // Permit with deadline which the permit is valid
+
+    const EIP712Domain = [
+      // array of objects -> properties from the contract and the types of them ircwithPermit
+      { name: 'name', type: 'string' },
+      { name: 'version', type: 'string' },
+      { name: 'verifyingContract', type: 'address' },
+    ];
+
+    const domain = {
+      name: await permitContractAddress.name(),
+      version: '1',
+      verifyingContract: permitContractAddress.address,
+    };
+
+    const Permit = [
+      // array of objects -> properties from erc20withpermit
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+    ];
+
+    const message = {
+      owner: account, // Wallet Address
+      spender: SPENDER_ADDRESS, // **This is the address of the spender whe want to give permit to.**
+      value: wrapValue.toString(),
+      nonce: nonce.toHexString(),
+      deadline,
+    };
+
+    const data = JSON.stringify({
+      types: {
+        EIP712Domain,
+        Permit,
+      },
+      domain,
+      primaryType: 'Permit',
+      message,
+    });
+
+    // const signatureLike = await library.send('eth_signTypedData_v4', [account, data]); // Library is a provider.
+    const signatureLikeWagmi = await signer._signTypedData(domain, { Permit }, message);
+
+    const signature = await ethers.utils.splitSignature(signatureLikeWagmi);
+    const preparedSignature = {
+      v: signature.v,
+      r: signature.r,
+      s: signature.s,
+      deadline,
+    };
+    return preparedSignature;
+  };
+
   return (
     <>
+      <Button onClick={testSigningMessage} type="primary">
+        Sign Message
+      </Button>
+      <Button onClick={onAttemptToApprove} type="primary">
+        Test RSV
+      </Button>
       {/* TODO: Add placeholder text when not connected  */}
       {/* TODO: Show add book form only when contract owner */}
       <AddBookForm
